@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- Follow controller-origin HTTPS port redirects before starting the Ingress proxy.
+- Prevent redirect loops when Omada 6.x redirects the legacy `8043` UI entry point to port `443`.
+
 ## 1.2.0
 
 - Automatically establish an Omada browser session from credentials stored in the add-on configuration.

@@ -6,11 +6,12 @@ const { URL } = require("url");
 
 const options = JSON.parse(fs.readFileSync("/data/options.json", "utf8"));
 const host = String(options.controller_ip || "").trim();
-const port = Number(options.controller_port || 8043);
+const configuredPort = Number(options.controller_port || 8043);
+let port = configuredPort;
 const username = String(options.username || "");
 const password = String(options.password || "");
 const verifySsl = options.verify_ssl === true;
-const baseUrl = `https://${host}:${port}`;
+let baseUrl = `https://${host}:${port}`;
 const agent = new https.Agent({ rejectUnauthorized: verifySsl, keepAlive: true });
 
 function ingressPrefix(req) {
@@ -55,6 +56,18 @@ function request(path, init = {}) {
     if (init.body) req.write(init.body);
     req.end();
   });
+}
+
+async function resolveControllerEndpoint() {
+  const probe = await request("/");
+  if (probe.status < 300 || probe.status >= 400 || !probe.headers.location) return;
+  const redirect = new URL(probe.headers.location, baseUrl);
+  if (redirect.hostname !== host) return;
+  const redirectPort = Number(redirect.port || (redirect.protocol === "https:" ? 443 : 80));
+  if (redirect.protocol !== "https:" || redirectPort === port) return;
+  port = redirectPort;
+  baseUrl = `https://${host}:${port}`;
+  console.log(`Controller redirected configured port ${configuredPort} to HTTPS port ${port}`);
 }
 
 async function getStatus() {
@@ -262,4 +275,8 @@ server.on("upgrade", (req, clientSocket, head) => {
   clientSocket.on("error", () => upstream.destroy());
 });
 
-server.listen(8099, "0.0.0.0", () => console.log(`Omada controller reverse proxy listening on :8099 for ${baseUrl}`));
+resolveControllerEndpoint()
+  .catch((error) => console.warn(`Controller endpoint probe failed: ${error.message}`))
+  .finally(() => server.listen(8099, "0.0.0.0", () =>
+    console.log(`Omada controller reverse proxy listening on :8099 for ${baseUrl}`),
+  ));
