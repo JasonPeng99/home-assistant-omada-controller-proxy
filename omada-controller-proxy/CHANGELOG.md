@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2
+
+- Rewrite dynamically created link, script, image, form, and poster paths through Home Assistant Ingress.
+- Restore Omada microfrontend layouts, styles, icons, and fonts that previously escaped to the Home Assistant root.
+
 ## 1.1.1
 
 - Rewrite absolute Omada JavaScript and JSON module asset paths through the Home Assistant Ingress prefix.
