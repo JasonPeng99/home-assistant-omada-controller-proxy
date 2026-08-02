@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.4
+
+- Allow Omada session cookies to work when Home Assistant itself is opened over local HTTP.
+- Keep proxied cookies scoped to the authenticated, unique Home Assistant Ingress path.
+
 ## 1.2.3
 
 - Log sanitized Omada login outcomes without credentials or session tokens.

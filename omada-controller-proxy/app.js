@@ -214,10 +214,19 @@ function rewriteLocation(value, prefix) {
 }
 
 function rewriteCookies(cookies, prefix) {
-  if (!Array.isArray(cookies) || !prefix) return cookies;
-  return cookies.map((cookie) => cookie
-    .replace(/;\s*Domain=[^;]+/ig, "")
-    .replace(/;\s*Path=\/([^;]*)/i, (_match, tail) => `; Path=${prefix}/${tail}`));
+  if (!Array.isArray(cookies)) return cookies;
+  return cookies.map((cookie) => {
+    let rewritten = cookie
+      .replace(/;\s*Domain=[^;]+/ig, "")
+      .replace(/;\s*Secure/ig, "");
+    if (prefix) {
+      rewritten = rewritten.replace(
+        /;\s*Path=\/([^;]*)/i,
+        (_match, tail) => `; Path=${prefix}/${tail}`,
+      );
+    }
+    return rewritten;
+  });
 }
 
 function proxyHttp(req, res) {
