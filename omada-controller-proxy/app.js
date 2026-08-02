@@ -89,6 +89,45 @@ async function getStatus() {
   return result;
 }
 
+async function createBrowserSession(req, res) {
+  if (!username || !password) {
+    res.writeHead(412, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({ authenticated: false, error: "credentials_not_configured" }));
+    return;
+  }
+
+  const infoResponse = await request("/api/info");
+  let info = {};
+  try { info = JSON.parse(infoResponse.body).result || {}; } catch {}
+  if (infoResponse.status !== 200 || !info.omadacId) {
+    res.writeHead(502, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({ authenticated: false, error: "controller_unavailable" }));
+    return;
+  }
+
+  const login = await request(`/${info.omadacId}/api/v2/login`, {
+    method: "POST",
+    headers: req.headers.cookie ? { cookie: req.headers.cookie } : {},
+    body: JSON.stringify({ username, password }),
+  });
+  let loginData = {};
+  try { loginData = JSON.parse(login.body); } catch {}
+  const authenticated = loginData.errorCode === 0 && Boolean(loginData.result?.token);
+  const headers = { "content-type": "application/json", "cache-control": "no-store" };
+  const cookies = rewriteCookies(login.headers["set-cookie"], ingressPrefix(req));
+  if (cookies?.length) headers["set-cookie"] = cookies;
+  res.writeHead(authenticated ? 200 : 401, headers);
+  res.end(JSON.stringify({
+    authenticated,
+    token: authenticated ? loginData.result.token : undefined,
+  }));
+}
+
+function autoLoginPatch(prefix) {
+  const endpoint = JSON.stringify(`${prefix}/_proxy/auto-login`);
+  return `<script>(function(){try{const x=new XMLHttpRequest();x.open("POST",${endpoint},false);x.withCredentials=true;x.send();if(x.status===200){const r=JSON.parse(x.responseText);if(r.authenticated&&r.token)localStorage.setItem("token",r.token)}}catch{}})();</script>`;
+}
+
 function browserPatch(prefix) {
   const encoded = JSON.stringify(prefix);
   return `<script>(function(){const P=${encoded};if(!P)return;const local=u=>{if(typeof u!=="string")return u;try{const x=new URL(u,location.href);if(x.origin===location.origin&&!x.pathname.startsWith(P+"/")){x.pathname=P+x.pathname;return u.startsWith("/")?x.pathname+x.search+x.hash:x.toString()}}catch{}return u};const patchElement=e=>{if(!e||!e.getAttribute)return e;for(const a of["href","src","action","poster"]){const v=e.getAttribute(a);if(v)e.setAttribute(a,local(v))}return e};const setAttribute=Element.prototype.setAttribute;Element.prototype.setAttribute=function(n,v){if(typeof n==="string"&&["href","src","action","poster"].includes(n.toLowerCase()))v=local(v);return setAttribute.call(this,n,v)};const appendChild=Node.prototype.appendChild;Node.prototype.appendChild=function(n){return appendChild.call(this,patchElement(n))};const insertBefore=Node.prototype.insertBefore;Node.prototype.insertBefore=function(n,r){return insertBefore.call(this,patchElement(n),r)};const f=window.fetch;window.fetch=function(input,init){if(typeof input==="string")input=local(input);else if(input instanceof Request){const next=local(input.url);if(next!==input.url)input=new Request(next,input)}return f.call(this,input,init)};const o=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=local(u);return o.apply(this,arguments)};const W=window.WebSocket;window.WebSocket=function(url,protocols){try{const u=new URL(url,location.href);if(u.hostname===location.hostname&&!u.pathname.startsWith(P+"/")){u.pathname=P+u.pathname;url=u.toString()}}catch{}return protocols===undefined?new W(url):new W(url,protocols)};window.WebSocket.prototype=W.prototype;window.WebSocket.CONNECTING=W.CONNECTING;window.WebSocket.OPEN=W.OPEN;window.WebSocket.CLOSING=W.CLOSING;window.WebSocket.CLOSED=W.CLOSED})();</script>`;
@@ -106,7 +145,7 @@ function rewriteBody(contentType, body, prefix) {
   if (contentType.includes("text/html")) {
     let text = body.toString("utf8");
     text = text.replace(/<base\s+href=["']\/["']\s*\/?\s*>/i, `<base href="${prefix}/" />`);
-    text = text.replace(/<head([^>]*)>/i, `<head$1>${importMap(prefix)}${browserPatch(prefix)}`);
+    text = text.replace(/<head([^>]*)>/i, `<head$1>${autoLoginPatch(prefix)}${importMap(prefix)}${browserPatch(prefix)}`);
     return Buffer.from(text);
   }
   if (contentType.includes("text/css")) {
@@ -186,6 +225,15 @@ function proxyHttp(req, res) {
 }
 
 const server = http.createServer(async (req, res) => {
+  if (req.url === "/_proxy/auto-login") {
+    try {
+      await createBrowserSession(req, res);
+    } catch (error) {
+      res.writeHead(502, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify({ authenticated: false, error: error.message }));
+    }
+    return;
+  }
   if (req.url === "/_proxy/status") {
     try {
       const status = await getStatus();

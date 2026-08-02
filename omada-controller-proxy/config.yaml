@@ -1,5 +1,5 @@
 name: Omada controller proxy
-version: "1.1.2"
+version: "1.2.0"
 slug: omada_controller_proxy
 description: Full Home Assistant Ingress reverse proxy for an Omada Controller
 url: https://github.com/JasonPeng99/home-assistant-omada-controller-proxy
@@ -10,6 +10,7 @@ boot: auto
 init: false
 ingress: true
 ingress_port: 8099
+panel_admin: true
 panel_icon: mdi:lan
 panel_title: Omada Controller
 homeassistant_api: false

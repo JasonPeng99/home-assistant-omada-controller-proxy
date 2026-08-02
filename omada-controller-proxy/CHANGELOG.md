@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0
+
+- Automatically establish an Omada browser session from credentials stored in the add-on configuration.
+- Keep controller credentials server-side and restrict the Home Assistant sidebar panel to administrators.
+
 ## 1.1.2
 
 - Rewrite dynamically created link, script, image, form, and poster paths through Home Assistant Ingress.
