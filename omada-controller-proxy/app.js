@@ -88,10 +88,7 @@ async function getStatus() {
     credentials_configured: Boolean(username && password),
   };
   if (!result.healthy || !result.credentials_configured) return result;
-  const login = await request(`/${info.omadacId}/api/v2/login`, {
-    method: "POST",
-    body: JSON.stringify({ username, password }),
-  });
+  const login = await loginController(info.omadacId);
   try {
     const loginData = JSON.parse(login.body);
     result.authenticated = loginData.errorCode === 0 && Boolean(loginData.result?.token);
@@ -100,6 +97,20 @@ async function getStatus() {
     result.auth_error = `HTTP ${login.status}`;
   }
   return result;
+}
+
+async function loginController(omadacId, cookie = "") {
+  const init = {
+    method: "POST",
+    headers: cookie ? { cookie } : {},
+    body: JSON.stringify({ username, password }),
+  };
+  const current = await request("/api/v2/login", init);
+  try {
+    const data = JSON.parse(current.body);
+    if (data.errorCode === 0 && data.result?.token) return current;
+  } catch {}
+  return request(`/${omadacId}/api/v2/login`, init);
 }
 
 async function createBrowserSession(req, res) {
@@ -118,11 +129,7 @@ async function createBrowserSession(req, res) {
     return;
   }
 
-  const login = await request(`/${info.omadacId}/api/v2/login`, {
-    method: "POST",
-    headers: req.headers.cookie ? { cookie: req.headers.cookie } : {},
-    body: JSON.stringify({ username, password }),
-  });
+  const login = await loginController(info.omadacId, req.headers.cookie || "");
   let loginData = {};
   try { loginData = JSON.parse(login.body); } catch {}
   const authenticated = loginData.errorCode === 0 && Boolean(loginData.result?.token);

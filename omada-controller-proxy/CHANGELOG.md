@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.2
+
+- Use the Omada 6.x `/api/v2/login` browser-session endpoint first.
+- Fall back to the controller-ID login endpoint for older Omada releases.
+
 ## 1.2.1
 
 - Follow controller-origin HTTPS port redirects before starting the Ingress proxy.
