@@ -1,6 +1,7 @@
 const fs = require("fs");
 const http = require("http");
 const https = require("https");
+const tls = require("tls");
 const { URL } = require("url");
 
 const options = JSON.parse(fs.readFileSync("/data/options.json", "utf8"));
@@ -10,7 +11,23 @@ const username = String(options.username || "");
 const password = String(options.password || "");
 const verifySsl = options.verify_ssl === true;
 const baseUrl = `https://${host}:${port}`;
-const agent = new https.Agent({ rejectUnauthorized: verifySsl });
+const agent = new https.Agent({ rejectUnauthorized: verifySsl, keepAlive: true });
+
+function ingressPrefix(req) {
+  return String(req.headers["x-ingress-path"] || "").replace(/\/$/, "");
+}
+
+function upstreamHeaders(req) {
+  const headers = { ...req.headers };
+  delete headers.host;
+  delete headers["x-ingress-path"];
+  delete headers["x-hass-source"];
+  headers.host = `${host}:${port}`;
+  headers["accept-encoding"] = "identity";
+  headers["x-forwarded-host"] = req.headers.host || "";
+  headers["x-forwarded-proto"] = "https";
+  return headers;
+}
 
 function request(path, init = {}) {
   return new Promise((resolve, reject) => {
@@ -56,11 +73,9 @@ async function getStatus() {
     credentials_configured: Boolean(username && password),
   };
   if (!result.healthy || !result.credentials_configured) return result;
-
-  const loginBody = JSON.stringify({ username, password });
   const login = await request(`/${info.omadacId}/api/v2/login`, {
     method: "POST",
-    body: loginBody,
+    body: JSON.stringify({ username, password }),
   });
   try {
     const loginData = JSON.parse(login.body);
@@ -72,28 +87,114 @@ async function getStatus() {
   return result;
 }
 
-const page = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Omada controller proxy</title><style>
-:root{color-scheme:light dark;--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;--muted:#6e6e73;--ok:#168a57;--bad:#d70015;--blue:#007aff}@media(prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--muted:#a1a1a6;--ok:#30d158;--bad:#ff453a}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px system-ui,-apple-system,"Segoe UI",sans-serif}.wrap{max-width:980px;margin:auto;padding:30px 18px}.eyebrow,.muted{color:var(--muted)}h1{font-size:34px;margin:5px 0 6px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-top:22px}.card,.actions{background:var(--card);border-radius:20px;padding:20px;box-shadow:0 8px 30px #0000000d}.label{color:var(--muted);font-size:13px}.value{font-size:24px;font-weight:700;margin-top:8px;word-break:break-word}.ok{color:var(--ok)}.bad{color:var(--bad)}.actions{margin-top:16px}.button{display:inline-block;background:var(--blue);color:#fff;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:650}.note{line-height:1.6;color:var(--muted)}
-</style></head><body><main class="wrap"><div class="eyebrow">Home Assistant Add-on</div><h1>Omada controller proxy</h1><div class="muted" id="updated">正在連線…</div><section class="grid" id="stats"></section><section class="actions"><a class="button" id="open" target="_blank" rel="noopener">開啟 Omada 管理介面</a><p class="note">IP、Port 與登入資料由 Add-on 設定頁管理。密碼不會傳送到此頁面。Omada 原廠頁面禁止跨來源 iframe，因此管理介面會在獨立頁籤開啟。</p></section></main><script>
-const card=(l,v,c="")=>'<div class="card"><div class="label">'+l+'</div><div class="value '+c+'">'+v+'</div></div>';async function load(){try{const r=await fetch('api/status',{cache:'no-store'}),d=await r.json();document.querySelector('#updated').textContent='最後更新：'+new Date().toLocaleString()+'｜每 10 秒更新';document.querySelector('#stats').innerHTML=card('控制器',d.healthy?'在線':'離線',d.healthy?'ok':'bad')+card('API 登入',d.credentials_configured?(d.authenticated?'成功':'失敗'):'尚未設定',d.authenticated?'ok':'bad')+card('控制器版本',d.controller_version||'—')+card('API 版本',d.api_version||'—')+card('回應時間',d.latency_ms==null?'—':d.latency_ms+' ms')+card('位址',d.controller_ip+':'+d.controller_port);document.querySelector('#open').href='https://'+d.controller_ip+':'+d.controller_port+'/';}catch(e){document.querySelector('#updated').textContent='無法連線 Add-on';document.querySelector('#stats').innerHTML=card('控制器','離線','bad')}}load();setInterval(load,10000);
-</script></body></html>`;
+function browserPatch(prefix) {
+  const encoded = JSON.stringify(prefix);
+  return `<script>(function(){const P=${encoded};if(!P)return;const local=u=>{if(typeof u!=="string"||!u.startsWith("/")||u.startsWith(P+"/"))return u;return P+u};const f=window.fetch;window.fetch=function(input,init){if(typeof input==="string")input=local(input);else if(input instanceof Request&&input.url.startsWith(location.origin+"/")){input=new Request(location.origin+local(new URL(input.url).pathname)+new URL(input.url).search,input)}return f.call(this,input,init)};const o=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=local(u);return o.apply(this,arguments)};const W=window.WebSocket;window.WebSocket=function(url,protocols){try{const u=new URL(url,location.href);if(u.hostname===location.hostname&&!u.pathname.startsWith(P+"/")){u.pathname=P+u.pathname;url=u.toString()}}catch{}return protocols===undefined?new W(url):new W(url,protocols)};window.WebSocket.prototype=W.prototype;window.WebSocket.CONNECTING=W.CONNECTING;window.WebSocket.OPEN=W.OPEN;window.WebSocket.CLOSING=W.CLOSING;window.WebSocket.CLOSED=W.CLOSED})();</script>`;
+}
+
+function rewriteBody(contentType, body, prefix) {
+  if (!prefix) return body;
+  if (contentType.includes("text/html")) {
+    let text = body.toString("utf8");
+    text = text.replace(/<base\s+href=["']\/["']\s*\/?\s*>/i, `<base href="${prefix}/" />`);
+    text = text.replace(/<head([^>]*)>/i, `<head$1>${browserPatch(prefix)}`);
+    return Buffer.from(text);
+  }
+  if (contentType.includes("text/css")) {
+    const escaped = prefix.replace(/\$/g, "$$$$");
+    return Buffer.from(body.toString("utf8").replace(/url\((['"]?)\//g, `url($1${escaped}/`));
+  }
+  return body;
+}
+
+function rewriteLocation(value, prefix) {
+  if (!value || !prefix) return value;
+  try {
+    const url = new URL(value, baseUrl);
+    if (url.hostname === host) return `${prefix}${url.pathname}${url.search}${url.hash}`;
+  } catch {}
+  return value.startsWith("/") && !value.startsWith(`${prefix}/`) ? `${prefix}${value}` : value;
+}
+
+function rewriteCookies(cookies, prefix) {
+  if (!Array.isArray(cookies) || !prefix) return cookies;
+  return cookies.map((cookie) => cookie
+    .replace(/;\s*Domain=[^;]+/ig, "")
+    .replace(/;\s*Path=\/([^;]*)/i, (_match, tail) => `; Path=${prefix}/${tail}`));
+}
+
+function proxyHttp(req, res) {
+  const prefix = ingressPrefix(req);
+  const requestPath = String(req.url || "/").split("?", 1)[0];
+  const proxy = https.request({
+    host,
+    port,
+    path: req.url,
+    method: req.method,
+    agent,
+    headers: upstreamHeaders(req),
+  }, (upstream) => {
+    const chunks = [];
+    upstream.on("data", (chunk) => chunks.push(chunk));
+    upstream.on("end", () => {
+      console.log(`${req.method} ${requestPath} -> ${upstream.statusCode}`);
+      const contentType = String(upstream.headers["content-type"] || "").toLowerCase();
+      const body = rewriteBody(contentType, Buffer.concat(chunks), prefix);
+      const headers = { ...upstream.headers };
+      delete headers["x-frame-options"];
+      delete headers["content-security-policy"];
+      delete headers["content-security-policy-report-only"];
+      delete headers["strict-transport-security"];
+      delete headers["content-length"];
+      delete headers["content-encoding"];
+      delete headers["transfer-encoding"];
+      delete headers.connection;
+      delete headers["keep-alive"];
+      delete headers.te;
+      delete headers.trailer;
+      delete headers.upgrade;
+      headers["content-length"] = body.length;
+      headers["cache-control"] = headers["cache-control"] || "no-cache";
+      if (headers.location) headers.location = rewriteLocation(headers.location, prefix);
+      if (headers["set-cookie"]) headers["set-cookie"] = rewriteCookies(headers["set-cookie"], prefix);
+      res.writeHead(upstream.statusCode || 502, headers);
+      res.end(body);
+    });
+  });
+  proxy.on("error", (error) => {
+    if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
+    res.end(`Omada proxy error: ${error.message}`);
+  });
+  req.pipe(proxy);
+}
 
 const server = http.createServer(async (req, res) => {
-  const path = (req.url || "/").replace(/^\/+/, "");
-  if (path === "api/status") {
+  if (req.url === "/_proxy/status") {
     try {
       const status = await getStatus();
       res.writeHead(status.healthy ? 200 : 503, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(status));
     } catch (error) {
       res.writeHead(503, { "content-type": "application/json", "cache-control": "no-store" });
-      res.end(JSON.stringify({ healthy: false, controller_online: false, error: error.message }));
+      res.end(JSON.stringify({ healthy: false, error: error.message }));
     }
     return;
   }
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-  res.end(page);
+  proxyHttp(req, res);
 });
 
-server.listen(8099, "0.0.0.0", () => console.log(`Omada controller proxy listening on :8099 for ${baseUrl}`));
+server.on("upgrade", (req, clientSocket, head) => {
+  const upstream = tls.connect({ host, port, rejectUnauthorized: verifySsl }, () => {
+    const headers = upstreamHeaders(req);
+    const headerText = Object.entries(headers)
+      .flatMap(([name, value]) => Array.isArray(value) ? value.map((item) => `${name}: ${item}`) : [`${name}: ${value}`])
+      .join("\r\n");
+    upstream.write(`${req.method} ${req.url} HTTP/${req.httpVersion}\r\n${headerText}\r\n\r\n`);
+    if (head.length) upstream.write(head);
+    clientSocket.pipe(upstream).pipe(clientSocket);
+  });
+  upstream.on("error", () => clientSocket.destroy());
+  clientSocket.on("error", () => upstream.destroy());
+});
+
+server.listen(8099, "0.0.0.0", () => console.log(`Omada controller reverse proxy listening on :8099 for ${baseUrl}`));

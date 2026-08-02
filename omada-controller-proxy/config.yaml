@@ -1,7 +1,7 @@
 name: Omada controller proxy
-version: "1.0.0"
+version: "1.1.0"
 slug: omada_controller_proxy
-description: Secure Home Assistant Ingress proxy and health dashboard for an Omada Controller
+description: Full Home Assistant Ingress reverse proxy for an Omada Controller
 url: https://github.com/JasonPeng99/home-assistant-omada-controller-proxy
 arch:
   - amd64

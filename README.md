@@ -1,16 +1,17 @@
 # Omada controller proxy
 
-A Home Assistant Add-on that monitors a local TP-Link Omada Software Controller through Home Assistant Ingress.
+A Home Assistant Add-on that proxies the complete local TP-Link Omada Software Controller interface through Home Assistant Ingress.
 
 The Add-on keeps the controller address and credentials in Home Assistant Add-on options. Credentials are used server-side to validate the Omada API login and are never returned to the browser.
 
 ## Features
 
-- Home Assistant Ingress sidebar panel
+- Complete Omada management interface inside the Home Assistant Ingress sidebar
 - Configurable controller IP and HTTPS port
 - Configurable local Omada username and password
 - Optional TLS certificate verification
-- Controller reachability, latency, version, API version, and authentication status
+- HTTP, static asset, API, redirect, cookie, and WebSocket proxying
+- Ingress-aware path rewriting for Omada resources
 - No host networking or privileged container access
 
 ## Installation
@@ -35,7 +36,7 @@ Use a dedicated, least-privilege local Omada account where possible. Enable `ver
 
 ## Omada management interface
 
-The Add-on dashboard provides a button that opens the original Omada management interface. Omada sends `X-Frame-Options: SAMEORIGIN`, so its complete management UI cannot safely be embedded inside the Home Assistant Ingress frame.
+The Add-on removes Omada's frame-blocking response headers only after the request has entered Home Assistant's authenticated Ingress boundary. It also rewrites root-relative resources to the unique Ingress path, so the original management interface can operate in the Home Assistant sidebar.
 
 ## Supported architecture
 
