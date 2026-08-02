@@ -22,6 +22,8 @@ function upstreamHeaders(req) {
   delete headers.host;
   delete headers["x-ingress-path"];
   delete headers["x-hass-source"];
+  delete headers["if-modified-since"];
+  delete headers["if-none-match"];
   headers.host = `${host}:${port}`;
   headers["accept-encoding"] = "identity";
   headers["x-forwarded-host"] = req.headers.host || "";
@@ -92,17 +94,31 @@ function browserPatch(prefix) {
   return `<script>(function(){const P=${encoded};if(!P)return;const local=u=>{if(typeof u!=="string"||!u.startsWith("/")||u.startsWith(P+"/"))return u;return P+u};const f=window.fetch;window.fetch=function(input,init){if(typeof input==="string")input=local(input);else if(input instanceof Request&&input.url.startsWith(location.origin+"/")){input=new Request(location.origin+local(new URL(input.url).pathname)+new URL(input.url).search,input)}return f.call(this,input,init)};const o=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=local(u);return o.apply(this,arguments)};const W=window.WebSocket;window.WebSocket=function(url,protocols){try{const u=new URL(url,location.href);if(u.hostname===location.hostname&&!u.pathname.startsWith(P+"/")){u.pathname=P+u.pathname;url=u.toString()}}catch{}return protocols===undefined?new W(url):new W(url,protocols)};window.WebSocket.prototype=W.prototype;window.WebSocket.CONNECTING=W.CONNECTING;window.WebSocket.OPEN=W.OPEN;window.WebSocket.CLOSING=W.CLOSING;window.WebSocket.CLOSED=W.CLOSED})();</script>`;
 }
 
+function importMap(prefix) {
+  const imports = Object.fromEntries(
+    ["modules", "static", "assets", "resources"].map((root) => [`/${root}/`, `${prefix}/${root}/`]),
+  );
+  return `<script type="importmap">${JSON.stringify({ imports })}</script>`;
+}
+
 function rewriteBody(contentType, body, prefix) {
   if (!prefix) return body;
   if (contentType.includes("text/html")) {
     let text = body.toString("utf8");
     text = text.replace(/<base\s+href=["']\/["']\s*\/?\s*>/i, `<base href="${prefix}/" />`);
-    text = text.replace(/<head([^>]*)>/i, `<head$1>${browserPatch(prefix)}`);
+    text = text.replace(/<head([^>]*)>/i, `<head$1>${importMap(prefix)}${browserPatch(prefix)}`);
     return Buffer.from(text);
   }
   if (contentType.includes("text/css")) {
     const escaped = prefix.replace(/\$/g, "$$$$");
     return Buffer.from(body.toString("utf8").replace(/url\((['"]?)\//g, `url($1${escaped}/`));
+  }
+  if (contentType.includes("javascript") || contentType.includes("ecmascript") || contentType.includes("json")) {
+    const escaped = prefix.replace(/\$/g, "$$$$");
+    return Buffer.from(body.toString("utf8").replace(
+      /(["'`])\/(?=(?:modules|static|assets|resources)\/)/g,
+      `$1${escaped}/`,
+    ));
   }
   return body;
 }
@@ -139,7 +155,8 @@ function proxyHttp(req, res) {
     upstream.on("end", () => {
       console.log(`${req.method} ${requestPath} -> ${upstream.statusCode}`);
       const contentType = String(upstream.headers["content-type"] || "").toLowerCase();
-      const body = rewriteBody(contentType, Buffer.concat(chunks), prefix);
+      const upstreamBody = Buffer.concat(chunks);
+      const body = rewriteBody(contentType, upstreamBody, prefix);
       const headers = { ...upstream.headers };
       delete headers["x-frame-options"];
       delete headers["content-security-policy"];

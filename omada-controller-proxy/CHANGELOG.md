@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+- Rewrite absolute Omada JavaScript and JSON module asset paths through the Home Assistant Ingress prefix.
+- Fix blank or incomplete post-login pages caused by failed `/modules/static/` dynamic imports.
+- Inject an import map for native dynamic imports and bypass upstream `304` responses so HTML patches are always applied.
+
 ## 1.1.0
 
 - Proxy the complete Omada management interface through Home Assistant Ingress.
