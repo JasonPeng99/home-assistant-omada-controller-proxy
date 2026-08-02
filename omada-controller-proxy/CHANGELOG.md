@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.3
+
+- Log sanitized Omada login outcomes without credentials or session tokens.
+- Distinguish application-level authentication errors from HTTP transport success.
+
 ## 1.2.2
 
 - Use the Omada 6.x `/api/v2/login` browser-session endpoint first.

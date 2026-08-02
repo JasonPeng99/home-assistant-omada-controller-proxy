@@ -108,9 +108,31 @@ async function loginController(omadacId, cookie = "") {
   const current = await request("/api/v2/login", init);
   try {
     const data = JSON.parse(current.body);
+    console.log("Omada login result", JSON.stringify({
+      endpoint: "/api/v2/login",
+      http_status: current.status,
+      error_code: data.errorCode,
+      message: data.msg || null,
+      token_received: Boolean(data.result?.token),
+      cookies_received: Array.isArray(current.headers["set-cookie"])
+        ? current.headers["set-cookie"].length : 0,
+    }));
     if (data.errorCode === 0 && data.result?.token) return current;
   } catch {}
-  return request(`/${omadacId}/api/v2/login`, init);
+  const legacy = await request(`/${omadacId}/api/v2/login`, init);
+  try {
+    const data = JSON.parse(legacy.body);
+    console.log("Omada login fallback result", JSON.stringify({
+      endpoint: "controller-id/api/v2/login",
+      http_status: legacy.status,
+      error_code: data.errorCode,
+      message: data.msg || null,
+      token_received: Boolean(data.result?.token),
+      cookies_received: Array.isArray(legacy.headers["set-cookie"])
+        ? legacy.headers["set-cookie"].length : 0,
+    }));
+  } catch {}
+  return legacy;
 }
 
 async function createBrowserSession(req, res) {
@@ -215,6 +237,19 @@ function proxyHttp(req, res) {
       console.log(`${req.method} ${requestPath} -> ${upstream.statusCode}`);
       const contentType = String(upstream.headers["content-type"] || "").toLowerCase();
       const upstreamBody = Buffer.concat(chunks);
+      if (requestPath.endsWith("/api/v2/login")) {
+        try {
+          const data = JSON.parse(upstreamBody.toString("utf8"));
+          console.log("Browser login result", JSON.stringify({
+            http_status: upstream.statusCode,
+            error_code: data.errorCode,
+            message: data.msg || null,
+            token_received: Boolean(data.result?.token),
+            cookies_received: Array.isArray(upstream.headers["set-cookie"])
+              ? upstream.headers["set-cookie"].length : 0,
+          }));
+        } catch {}
+      }
       const body = rewriteBody(contentType, upstreamBody, prefix);
       const headers = { ...upstream.headers };
       delete headers["x-frame-options"];
