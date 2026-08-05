@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.5
+
+- Remove the environment-specific default controller IP address from new installations.
+
 ## 1.2.4
 
 - Allow Omada session cookies to work when Home Assistant itself is opened over local HTTP.

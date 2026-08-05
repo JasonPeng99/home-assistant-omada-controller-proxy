@@ -27,7 +27,7 @@ The Add-on keeps the controller address and credentials in Home Assistant Add-on
 ## Configuration
 
 ```yaml
-controller_ip: 192.168.10.245
+controller_ip: ""
 controller_port: 8043
 username: admin
 password: change_me
