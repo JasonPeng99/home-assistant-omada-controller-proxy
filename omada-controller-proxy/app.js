@@ -166,6 +166,7 @@ async function createBrowserSession(req, res) {
 }
 
 function autoLoginPatch(prefix) {
+  if (!username || !password) return "";
   const endpoint = JSON.stringify(`${prefix}/_proxy/auto-login`);
   return `<script>(function(){try{const x=new XMLHttpRequest();x.open("POST",${endpoint},false);x.withCredentials=true;x.send();if(x.status===200){const r=JSON.parse(x.responseText);if(r.authenticated&&r.token)localStorage.setItem("token",r.token)}}catch{}})();</script>`;
 }

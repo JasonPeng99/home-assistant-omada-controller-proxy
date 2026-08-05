@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.6
+
+- Leave the Omada login interface untouched when no credentials are configured.
+- Remove example credentials from the repository documentation.
+
 ## 1.2.5
 
 - Remove the environment-specific default controller IP address from new installations.
